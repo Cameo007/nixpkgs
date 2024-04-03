@@ -3093,6 +3093,18 @@
     githubId = 141733;
     name = "Andrew Bruce";
   };
+  cameo007 = {
+    name = "Pascal Dietrich";
+
+    email = "pascal.1.dietrich@hotmail.com";
+    matrix = "@pascal.dietrich:mintux.de";
+    github = "Cameo007";
+    githubId = 80521473;
+
+    keys = [{
+      fingerprint = "2D62 24B9 1250 86AF E318 12A0 F1D1 5228 0511 FB91";
+    }];
+  };
   cameronfyfe = {
     email = "cameron.j.fyfe@gmail.com";
     github = "cameronfyfe";

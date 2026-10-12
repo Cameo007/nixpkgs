@@ -7,11 +7,17 @@
 }:
 let
   inherit (lib)
+    concatStringsSep
     filterAttrs
+    getExe
+    hasAttr
+    isAttrs
+    mapAttrs'
     mkEnableOption
     mkIf
     mkOption
     mkPackageOption
+    nameValuePair
     removePrefix
     ;
 
@@ -52,6 +58,12 @@ let
     ) credentials;
   loadCredentials = credentials: lib.mapAttrsToList (name: path: "${name}:${path}") credentials;
 
+  vernissage_server_credentials = mapAttrs' (name: value: nameValuePair name value._secret) (
+    filterAttrs (n: v: isAttrs v && hasAttr "_secret" v) cfgApi.settings
+  );
+  vernissage_server_credentials_systemd = mapAttrs' (
+    name: value: nameValuePair name { _secret = "%d/${name}"; }
+  ) vernissage_server_credentials;
   vernissage_push_credentials = {
     VPUSH_KEY = cfgPush.vpushKeyFile;
   };
@@ -228,9 +240,17 @@ in
         ];
 
         preStart = ''
+          cd "$CREDENTIALS_DIRECTORY"
+          systemd-creds cat connectionString
+
           # Generate config including secret values.
           ${utils.genJqSecretsReplacementSnippet {
-            vernissage = (filterAttrs (n: v: v != null) cfgApi.settings);
+            vernissage = (
+              (filterAttrs (
+                n: v: v != null && (!isAttrs v || (isAttrs v && !(hasAttr "_secret" v)))
+              ) cfgApi.settings)
+              // vernissage_server_credentials_systemd
+            );
           } "/run/vernissage/appsettings.json"}
 
           # Setup symlinks
@@ -242,7 +262,7 @@ in
         '';
 
         serviceConfig = {
-          ExecStart = "${lib.getExe cfgApi.package} serve --env production --hostname ${cfgApi.hostname} --port ${cfgApi.port}";
+          ExecStart = "${getExe cfgApi.package} serve --env production --hostname ${cfgApi.hostname} --port ${cfgApi.port}";
           DynamicUser = true;
 
           AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
@@ -251,6 +271,7 @@ in
             "/nix/store"
           ];
           CapabilityBoundingSet = [ "CAP_NET_BIND_SERVICE" ];
+          LoadCredential = loadCredentials vernissage_server_credentials;
           LockPersonality = true;
           MemoryDenyWriteExecute = true;
           NoNewPrivileges = true;
@@ -303,7 +324,7 @@ in
         ];
 
         serviceConfig = {
-          ExecStart = lib.getExe cfgWeb.package;
+          ExecStart = getExe cfgWeb.package;
           DynamicUser = true;
 
           AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
@@ -346,7 +367,7 @@ in
         environment = {
           PORT = toString cfgWeb.port;
           VERNISSAGE_CSP_IMG = cfgWeb.settings.cspImg;
-          VERNISSAGE_ALLOWED_HOSTS = toString cfgWeb.settings.allowedHosts;
+          VERNISSAGE_ALLOWED_HOSTS = concatStringsSep "," cfgWeb.settings.allowedHosts;
         };
       };
     })
@@ -372,7 +393,7 @@ in
         script = ''
           ${loadCredentialsIntoEnv vernissage_push_credentials}
 
-          ${lib.getExe cfgPush.package}
+          ${getExe cfgPush.package}
         '';
 
         serviceConfig = {
@@ -414,12 +435,6 @@ in
           SystemCallFilter = [
             "@system-service"
           ];
-        };
-
-        environment = {
-          PORT = toString cfgWeb.port;
-          VERNISSAGE_CSP_IMG = cfgWeb.settings.cspImg;
-          VERNISSAGE_ALLOWED_HOSTS = toString cfgWeb.settings.allowedHosts;
         };
       };
     })
